@@ -22,7 +22,7 @@ let age = 21;
 let number1 = 20;
 let number2 = 50;
 
-let result = ($number1 + $number2) * 2;   //Result is 40
+let result = ($number1 + $number2) * 2;   //Result is 140
 
 ```
 
