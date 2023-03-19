@@ -93,3 +93,19 @@ $modifyAge(100);
 $log($age);   //Still says 20, any changes to the globals in functions get reset
 
 ```
+
+> ### Function arguments
+
+```js
+
+let add := (x, y) {
+  return ($x + $y);
+}
+
+$add(1, 3); //4
+
+$add((1 + 3), 3); //7
+
+$add(1 + 3, 3);   //Syntax error, in order to provide a brand new expression as a paramater you must use a new pair of parentheses, like above
+
+```
