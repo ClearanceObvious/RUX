@@ -5,12 +5,13 @@ local tt = require(script.Parent.Tokens)
 
 local lowercase = 'abcdefghijklmnopqrstuvwxyz'
 local uppercase = lowercase:upper()
-local strtable = lowercase .. uppercase .. ' !@#$%^&*()_+|{}:?></.,;[]-=\\'
+local strtable = lowercase .. uppercase .. ' !@#$%^&*()_+|{}:?></.,;[]-=\\0123456789'
 
 lexer.keywords = {
 	let = 'let',
 	_if = 'if',
-	_else = 'else'
+	_else = 'else',
+	_return = 'return'
 }
 
 function isWhiteSpace(char)
@@ -118,11 +119,18 @@ function lexer:lex()
 		elseif self.currentChar == '/' then
 			tokens[#tokens+1] = {type = tt.DIV, value = nil}
 			self:advance()
+		elseif self.currentChar == ':' then
+			tokens[#tokens+1] = {type = tt.COLON, value = nil}
+			self:advance()
+		elseif self.currentChar == ',' then
+			tokens[#tokens+1] = {type = tt.COMMA, value = nil}
+			self:advance()
 		elseif self.currentChar == '"' then
 			tokens[#tokens+1] = {type = tt.LSTR}
 			self:advance()
 			tokens[#tokens+1] = self:getStr()
 			if self.currentChar ~= '"' then
+				print(self.currentChar)
 				error('Expected "')
 			end
 			tokens[#tokens+1] = {type = tt.RSTR}
@@ -173,7 +181,14 @@ function lexer:getID()
 	if strInTable(id, self.keywords) then
 		return {type = tt.KW, value = id}
 	end
-	return {type = tt.ID, value = id}
+	
+	if id == 'true' then
+		return {type = tt.BOOL, value = true}
+	elseif id == 'false' then
+		return {type = tt.BOOL, value = false}
+	else
+		return {type = tt.ID, value = id}
+	end
 end
 
 function lexer:getNumber()
