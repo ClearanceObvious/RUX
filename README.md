@@ -54,3 +54,42 @@ if ($age > 18 || $name == "Michael") {
 }
 
 ```
+
+> ### Functions
+
+```js
+
+let divide := (x, y) {
+  let result = 0;
+  
+  if ($y == 0) {
+    $result = "Error, cannot divide by 0";
+  } else {
+    $result = $x / $y;
+  }
+  
+  $log($result);
+}
+
+$divide(1, 0);  //Cannot Divide by 0
+
+```
+
+
+# Language Limitations
+
+> ### Scopes
+
+``` js
+
+let age = 20;
+
+let modifyAge := (newAge) {
+  $age = $newAge;
+}
+
+$modifyAge(100);
+
+$log($age);   //Still says 20, any changes to the globals in functions get reset
+
+```
