@@ -63,8 +63,20 @@ function parser:factor()
 	
 	if not pcall(function()
 		if self.currentToken.type == tt.AID then
-			self:advance()
-			ret = node.new(nt.VAN, nil, self.currentToken.value)
+				self:advance()
+				local val = self.currentToken.value
+				if self.tokens[self.currentNum+1] then
+					if self.tokens[self.currentNum+1].type == tt.LP then
+						self:advance(); self:advance()
+						ret = self:ffunction_call(val)
+					end
+				end
+				if ret == nil then
+					ret = node.new(nt.VAN, nil, val)
+					self:advance()
+				end
+		elseif self.currentToken.type == tt.BOOL then
+			ret = node.new(nt.BOOL, nil, self.currentToken.value)
 			self:advance()
 		elseif self.currentToken.type == tt.LSTR then
 			ret = self:get_string()
@@ -120,6 +132,7 @@ function parser:assign_variable(id)
 		local expr = self:expression()
 		if self.currentToken then
 			if self.currentToken.type ~= tt.EOL then
+				print(self.currentToken)
 				error('Unfinished Statement')
 			end
 		else
@@ -230,13 +243,95 @@ function parser:if_statement()
 	return node.new(nt.IFN, left, block, elifs)
 end
 
+function parser:fargs_identifier(arguments, first: boolean?)	
+	if self.currentToken.type ~= tt.ID and not first then
+		error('Expected Identifier')
+	end
+	
+	if self.currentToken.type ~= tt.ID then return nil end
+	
+	if match(self.currentToken.value, arguments) then 
+		error('Cannot Use same argument name ' .. self.currentToken.value .. ' multiple times.')
+	end
+	
+	local id = self.currentToken.value
+	self:advance()
+	return id
+end
+
+function parser:fargs(callee: boolean?)
+	if not callee then
+		local arguments = {}
+		arguments[1] = self:fargs_identifier(arguments, true)
+		while match(self.currentToken.type, {tt.COMMA}) do
+			self:advance()
+			arguments[#arguments+1] = self:fargs_identifier(arguments)
+		end
+		return arguments
+	else
+		local arguments = {}
+		local nextToken = self.tokens[self.currentNum+1]
+		if nextToken.type == tt.ID then
+			if self.currentToken.type ~= tt.AID then error('Expected $') end
+			self:advance()
+			arguments[#arguments+1] = self:fargs_identifier(arguments, true)
+		elseif self.currentToken.type == tt.RP then
+			return arguments
+		else
+			arguments[#arguments+1] = self:expression()
+		end
+		
+		while match(self.currentToken.type, {tt.COMMA}) do
+			nextToken = self.tokens[self.currentNum+1]
+			if nextToken.type == tt.ID then
+				if self.currentToken.type ~= tt.AID then error('Expected $') end
+				self:advance()
+				arguments[#arguments+1] = self:fargs_identifier(arguments, true)
+			else
+				self:advance()
+				arguments[#arguments+1] = self:expression()
+			end
+		end
+		return arguments
+	end
+end
+
+function parser:ffunction(id)
+	if self.currentToken.type ~= tt.EQ then error('Expected equal sign "="') end
+	self:advance()
+	if self.currentToken.type ~= tt.LP then error('Expected Left Parentheses "("') end
+	self:advance()
+	local arguments = self:fargs()
+	if self.currentToken.type ~= tt.RP then error('Expected Right Parentheses ")"') end
+	self:advance()
+	if self.currentToken.type ~= tt.LCB then error('Expected Left Curly Brackets "{"') end
+	self:advance()
+	local block, returnval = self:block(true, true)
+	return node.new(nt.FUNC, arguments, id, block, returnval)
+end
+
+function parser:ffunction_call(id)
+	local args = self:fargs(true)
+	if self.currentToken.type ~= tt.RP then error('Expected Right parentheses') end
+	self:advance()
+	return node.new(nt.CFUNC, args, id)
+end
+
 function parser:statement()
 	if self.currentToken then
 		if self.currentToken.type == tt.KW then
 			local kw = self.currentToken.value
 			self:advance()
 			
+			
 			if kw == keywords.let and self.currentToken.type == tt.ID then
+				if self.tokens[self.currentNum+1].type == tt.COLON then
+					--Function assignment
+					local id = self.currentToken.value
+					self:advance(); self:advance()
+					return self:ffunction(id)
+				end
+				
 				--Variable Assignment
 				local id = self.currentToken.value
 				self:advance()
@@ -245,6 +340,7 @@ function parser:statement()
 				--If Statement
 				return self:if_statement()
 			else
+				print(kw, self.currentToken)
 				error('Unfinished Statement')
 			end
 		elseif self.currentToken.type == tt.AID then
@@ -252,8 +348,22 @@ function parser:statement()
 			local val = self.currentToken.value
 			self:advance()
 			if self.currentToken then
-				if self.currentToken.type == tt.EOL then
+				if self.currentToken.type == tt.EQ then
 					self:advance()
+					local expr = self:expression()
+					if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
+					self:advance()
+					return node.new(nt.VON, val, expr)
+				elseif self.currentToken.type == tt.LP then
+					--Function Calls
+					self:advance()
+					local fcall = self:ffunction_call(val)
+					if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
+					self:advance()
+					return fcall
+				else
+					print(self.currentToken)
+					error('Invalid Syntax Error')
 				end
 			end
 			return node.new(nt.VAN, nil, val)
@@ -265,11 +375,22 @@ function parser:statement()
 	end
 end
 
-function parser:block(expect_right_curly_brackets)
+function parser:block(expect_right_curly_brackets, check_for_return_statement: boolean?)
 	local statements = {}
+	local ret = nil
 	if expect_right_curly_brackets then
 		while self.currentToken ~= nil and self.currentToken.type ~= tt.RCB do
-			statements[#statements+1] = self:statement()
+			if check_for_return_statement and self.currentToken.type == tt.KW and self.currentToken.value == keywords._return then break end
+			statements[#statements+1] = self:statement(check_for_return_statement)
+		end
+		if check_for_return_statement then
+			if self.currentToken.type == tt.KW and self.currentToken.value == keywords._return then
+				self:advance()
+				local expr = self:expression()
+				if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
+				self:advance()
+				ret = node.new(nt.RETF, nil, expr)
+			end
 		end
 		if self.currentToken.type == tt.RCB then
 			self:advance()
@@ -282,7 +403,7 @@ function parser:block(expect_right_curly_brackets)
 		end
 	end
 	
-	return statements
+	return statements, ret
 end
 
 function parser:parse()
