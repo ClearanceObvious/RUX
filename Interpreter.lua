@@ -243,6 +243,20 @@ function interpreter:visitBinOp(left, op, right)
 	end
 end
 
+function interpreter:visitFCString(node)
+	if node.type == nt.STR then
+		local vals = node.value
+		local str = ''
+		
+		for i, v in pairs(vals) do
+			str = str .. v
+		end
+		return str
+	else
+		error('Unwanted Type')
+	end
+end
+
 function interpreter:visitExpression(node)
 	if node == nil then
 		return nil
@@ -277,6 +291,8 @@ function interpreter:visitConditionalOperatorNode(cond)
 		left = self:visitBinOp(cond.left.left, cond.left.op, cond.left.right).value
 	elseif cond.left.type == nt.COND then
 		left = self:visitConditionNode(cond.left)
+	elseif cond.left.type == nt.CFUNC then
+		left = self:visitExpression(self:callFunction(cond.left))
 	elseif match(cond.left.type, {nt.EEQ, nt.NEEQ, nt.LT, nt.LTE, nt.GT, nt.GTE}) then
 		left = self:visitConditionalOperatorNode(cond.left)
 	else
@@ -294,6 +310,8 @@ function interpreter:visitConditionalOperatorNode(cond)
 		right = self:visitBinOp(cond.right.left, cond.right.op, cond.right.right).value
 	elseif cond.right.type == nt.COND then
 		right = self:visitConditionNode(cond.right)
+	elseif cond.right.type == nt.CFUNC then
+		right = self:visitExpression(self:callFunction(cond.right))
 	elseif match(cond.right.type, {nt.EEQ, nt.NEEQ, nt.LT, nt.LTE, nt.GT, nt.GTE}) then
 		right = self:visitConditionalOperatorNode(cond.right)
 	else
@@ -446,6 +464,13 @@ function interpreter:updateSymbolTable(args, val)
 		self:visitVariableOverrideNode(nod)
 	end
 end
+function interpreter:differentiateSymbolTables(symb1: {}, symb2: {})
+	local newSymb1 = symb1
+	for i, v in symb2 do
+		if inSymbolTable(i, symb1) then newSymb1[i] = v end
+	end
+	return newSymb1
+end
 
 function interpreter:callFunction(node)
 	local lastSymbolTable
@@ -456,7 +481,7 @@ function interpreter:callFunction(node)
 	
 	local args = self.symbolTable[node.value].ARGS
 	if #args ~= #node.op then
-		error('Invalid Number of Arguments')
+		error('Function ' .. node.value .. ': Invalid Number of Arguments ' .. tostring(#args) .. ' : ' .. tostring(#node.op))
 	end
 		
 	lastSymbolTable = deepcopy(self.symbolTable)
@@ -466,9 +491,15 @@ function interpreter:callFunction(node)
 	
 	local retTry = self.symbolTable[node.value].RET
 	local returnVal = if retTry then self:visitExpression(retTry) else nil
+	if retTry then
+		if retTry.value.type == nt.STR then
+			returnVal = self:visitFCString(retTry.value)
+		end
+	end
 	
-	self.symbolTable = lastSymbolTable
 	
+	
+	self.symbolTable = self:differentiateSymbolTables(lastSymbolTable, self.symbolTable)
 	
 	local retType = nil
 	if typeof(returnVal) == 'boolean' then
@@ -486,6 +517,56 @@ function interpreter:callFunction(node)
 	end
 end
 
+function interpreter:forLoop(node)
+	local lastSymbolTableFull = deepcopy(self.symbolTable)
+	local lst
+	self:visitVariableCreateNode(node.op)
+	local __checkcondition = function()
+		return self:visitConditionNode(node.value)
+	end
+	local __statementcall = function()
+		self:visitVariableOverrideNode(node.left)
+	end
+	local block_to_visit = node.right
+	
+	while true do
+		--Running the Loop
+		lst = deepcopy(self.symbolTable)
+		local ret = self:visitBlock(block_to_visit)
+		self.symbolTable = self:differentiateSymbolTables(lst, self.symbolTable)
+		if ret then break end
+		
+		--For Loop Checks
+		__statementcall()
+		if not __checkcondition() then break end
+	end
+	
+	self.symbolTable = self:differentiateSymbolTables(lastSymbolTableFull, self.symbolTable)
+end
+
+function interpreter:whileLoop(node)
+	local lstFull = deepcopy(self.symbolTable)
+	local lst
+	local __checkcondition = function()
+		return self:visitConditionNode(node.op)
+	end
+	local __visitBlock = function()
+		return self:visitBlock(node.value)
+	end
+	
+	while true do
+		--Running the Loop
+		lst = deepcopy(self.symbolTable)
+		if __visitBlock() then break end
+		self.symbolTable = self:differentiateSymbolTables(lst, self.symbolTable)
+		
+		--While Loop Checks
+		if not __checkcondition() then break end
+	end
+	
+	self.symbolTable = self:differentiateSymbolTables(lstFull, self.symbolTable)
+end
+
 function interpreter:visitStatement(node)
 	if node.type == nt.VCN then
 		--Creating Variables
@@ -496,6 +577,12 @@ function interpreter:visitStatement(node)
 	elseif node.type == nt.IFN then
 		--If statements
 		self:ifStatement(node)
+	elseif node.type == nt.FORL then
+		--For Loops
+		self:forLoop(node)
+	elseif node.type == nt.WHLN then
+		--While loops
+		self:whileLoop(node)
 	elseif node.type == nt.FUNC then
 		--Function declarations
 		return self:defineFunction(node)
@@ -507,6 +594,7 @@ end
 
 function interpreter:visitBlock(block)
 	for i, node in pairs(block) do
+		if node.type == nt.BREAK then return true end
 		self:visitStatement(node)
 	end
 end
