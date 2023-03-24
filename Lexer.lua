@@ -11,7 +11,10 @@ lexer.keywords = {
 	let = 'let',
 	_if = 'if',
 	_else = 'else',
-	_return = 'return'
+	_for = 'for',
+	_whl = 'while',
+	_return = 'return',
+	_break = 'break'
 }
 
 function isWhiteSpace(char)
