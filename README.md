@@ -75,37 +75,43 @@ $divide(1, 0);  //Cannot Divide by 0
 
 ```
 
-
-# Language Limitations
-
-> ### Scopes
-
-``` js
-
-let age = 20;
-
-let modifyAge := (newAge) {
-  $age = $newAge;
-}
-
-$modifyAge(100);
-
-$log($age);   //Still says 20, any changes to the globals in functions get reset
-
-```
-
-> ### Function arguments
+> ### Loops
 
 ```js
 
-let add := (x, y) {
-  return ($x + $y);
+for (let i = 20; $i < 100; $i = $i + 1) {
+  $log($i);
 }
 
-$add(1, 3); //4
+let x = 0;
+while ($x != 100) {
+  $x = $x + 1;
+  $log($x);
+}
 
-$add((1 + 3), 3); //7
+```
 
-$add(1 + 3, 3);   //Syntax error, in order to provide a brand new expression as a paramater you must use a new pair of parentheses, like above
+
+# Language Limitations
+
+> ### Conditional Return / Break Statements
+
+```js
+
+let divide := (n1, n2) {
+  if ($n2 == 0) {
+    return "Cannot Divide by 0";  //Does not work if it's in If Statement
+  } else {
+    return ($n1 / $n2);   //Does not work if it's in If Statement
+  }
+}
+
+//FIX (VER 1.7>)
+let divide := (n1, n2) {
+  !(n2 == 0) return "Cannot Divide by 0"; //Works through "Conditional Statement"
+  return ($n1 / $n2)                      //Otherwise Returns division
+}
+
+$log($divide(1, 2));                      //Outputs properly
 
 ```
