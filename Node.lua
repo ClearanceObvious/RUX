@@ -2,31 +2,35 @@ local node = {}
 local mt = {__index = node}
 
 node.NodeType = {
-	NUM = 'NumberNode',			--type NUM, value float
-	STR = 'StringNode',			--type STR, value string
+	NUM = 'NumberNode',				--type NUM, value float
+	STR = 'StringNode',				--type STR, value string
 	BOOL = 'BooleanNode',			--type BOOL, value false/true
 	
-	BINOP = 'BinaryOperationNode',		--type BINOP, left expr, right expr
-	UNOP = 'UnaryOperationNode',		--type UNOP, op +/-, value expr
+	BINOP = 'BinaryOperationNode',	--type BINOP, left expr, right expr
+	UNOP = 'UnaryOperationNode',	--type UNOP, op +/-, value expr
 	
 	EEQ = 'DoubleEqualNode',		--type EEQ, left expr, right expr
-	NEEQ = 'NotDoubleEqualNode',		--type NEEQ, left expr, right expr
+	NEEQ = 'NotDoubleEqualNode',	--type NEEQ, left expr, right expr
 	
 	LT = 'LessThenNode',			--type LE, left expr, right expr, op and/or?
-	LTE = 'LessThenOrEqualNode',		--type LTE, left expr, right expr, op and/or?
+	LTE = 'LessThenOrEqualNode',	--type LTE, left expr, right expr, op and/or?
 	GT = 'GreaterThenNode',			--type GT, left expr, right expr, op and/or?
-	GTE = 'GreaterThenOrEqualNode',		--type GTE, left expr, right expr, op and/or?
+	GTE = 'GreaterThenOrEqualNode',	--type GTE, left expr, right expr, op and/or?
 	
 	COND = 'ConditionNode',			--type COND, op AND/OR?, left cond, right cond?
 	IFN = 'IfStatementNode',		--type IFN, op COND, value block, left IFN?
 	
 	FUNC = 'FunctionNode',			--type FUNC, op args, value id, left block, right RETF?
 	CFUNC = 'CallFunctionNode',		--type CFUNC, op args, value id
-	RETF = 'ReturnFunctionNode',		--type RETF, value expr
+	RETF = 'ReturnFunctionNode',	--type RETF, value expr
+	
+	FORL = 'ForLoopNode',			--type FORL, op VCN, value COND, left VON, right block
+	WHLN = 'WhileLoopNode',			--type WHLN, op COND, value block
+	BREAK = 'BreakLoopNode',		--type BREAK
 	
 	VCN = 'VariableCreateNode',		--type VCN, op ID, value expr
 	VAN = 'VariableAccessNode',		--type VAN, value ID
-	VON = 'VariableOverrideNode'		--type VON, op ID, value expr
+	VON = 'VariableOverrideNode'	--type VON, op ID, value expr
 }
 
 function node.new(type, op: any?, value: any?, left: any?, right: any?)
