@@ -95,24 +95,16 @@ while ($x != 100) {
 
 # Language Limitations
 
-> ### Conditional Return / Break Statements
+> ### Condition Rule
 
 ```js
+//Valid
+if (true) {}
 
-let divide := (n1, n2) {
-  if ($n2 == 0) {
-    return "Cannot Divide by 0";  //Does not work if it's in If Statement
-  } else {
-    return ($n1 / $n2);   //Does not work if it's in If Statement
-  }
-}
-
-//FIX (VER 1.7>)
-let divide := (n1, n2) {
-  !(n2 == 0) return "Cannot Divide by 0"; //Works through "Conditional Statement"
-  return ($n1 / $n2)                      //Otherwise Returns division
-}
-
-$log($divide(1, 2));                      //Outputs properly
+  //Unvalid, a new pair of "(" expects a brand new conditional expression to be used, in hopes to change branch operators
+if ((true)) {}
+  //This is the kind of expression it expects
+if ((true && false) || true) {}
+```
 
 ```
