@@ -1,6 +1,13 @@
 local interpreter = {}
 local mt = {__index = interpreter}
 
+local base_ret_value = -90192309172412093192315671991789273981751072390
+local base_skip_value = 200013309172412093192415671991189273900051072390
+
+local FF_EXIT_LOOP = false
+
+local console = require(script.Parent.Console)
+
 local node = require(script.Parent.Node)
 local nt = node.NodeType
 local tt = require(script.Parent.Tokens)
@@ -72,11 +79,15 @@ function interpreter.new(nodes)
 					end
 					mes = t
 				end
-				print(mes)
+				mes = if mes == base_ret_value then 'null' else mes
+				console:pushToConsole(mes)
 			end,
 		}
 	}
-	self.localSymbolTables = {}
+	self.fCurrentStack = {
+		FUNC = {},
+		LOOP = {}
+	}
 	
 	return self
 end
@@ -99,6 +110,9 @@ function interpreter:visitUnaryOp(type, value, op)
 	elseif type == nt.VAN then
 		local van = self:visitVariableAccessNode(value)
 		return node.new(nt.NUM, nil, if op == tt.PLUS then van.value else van.value * -1)
+	elseif type == nt.CFUNC then
+		local cfunc = self:callFunction(node.new(nt.CFUNC, op, value))
+		return node.new(nt.NUM, nil, if op == tt.PLUS then cfunc.value else cfunc.value * -1)
 	else
 		error('Unknown Error In INTERPRETER:visitUnaryOp')
 	end
@@ -261,7 +275,6 @@ function interpreter:visitExpression(node)
 	if node == nil then
 		return nil
 	end
-	
 	if node.type == nt.NUM or node.type == nt.STR or node.type == nt.BOOL then
 		return node.value
 	elseif node.type == nt.UNOP then
@@ -298,7 +311,6 @@ function interpreter:visitConditionalOperatorNode(cond)
 	else
 		error('Unknown Type in If Statement ' .. cond.left.type)
 	end
-
 
 	if cond.right.type == nt.NUM or cond.right.type == nt.STR or cond.right.type == nt.BOOL then
 		right = cond.right.value
@@ -421,10 +433,10 @@ end
 function interpreter:ifStatement(node)
 	local op = self:visitConditionNode(node.op)
 	if op == true then
-		self:visitBlock(node.value)
+		return self:visitBlock(node.value)
 	else
 		if node.left then
-			self:ifStatement(node.left)
+			return self:ifStatement(node.left)
 		end
 	end
 end
@@ -433,29 +445,20 @@ function interpreter:defineFunction(node)
 	if inSymbolTable(node.value, self.symbolTable) then
 		error('"'..node.value..'" already exists')
 	end
-	
-	if not node.right then
-		self.symbolTable[node.value] = {
-			FUNCTION = function(...)
-				if #node.op ~= (#{...}) then
-					error('Invalid number of arguments')
-				end
-				self:visitBlock(node.left)
-			end,
-			ARGS = node.op
-		}
-	else
-		self.symbolTable[node.value] = {
-			FUNCTION = function(...)
-				if #node.op ~= (#{...}) then
-					error('Invalid number of arguments')
-				end
-				self:visitBlock(node.left)
-			end,
-			ARGS = node.op,
-			RET = node.right
-		}
-	end
+	local ret = nil
+	self.symbolTable[node.value] = {
+		FUNCTION = function(...)
+			local index = #self.fCurrentStack.FUNC+1
+			self.fCurrentStack.FUNC[index] = node.value
+		
+			if #node.op ~= (#{...}) then
+				error('Invalid number of arguments')
+			end
+			local block =  self:visitBlock(node.left, node.value)
+			self.fCurrentStack.FUNC[index] = nil
+		end,
+		ARGS = node.op
+	}
 end
 
 function interpreter:updateSymbolTable(args, val)
@@ -488,19 +491,21 @@ function interpreter:callFunction(node)
 	self:updateSymbolTable(args, node.op)
 	
 	self.symbolTable[node.value].FUNCTION(unpack(node.op))
-	
 	local retTry = self.symbolTable[node.value].RET
-	local returnVal = if retTry then self:visitExpression(retTry) else nil
+	local returnVal = base_ret_value
 	if retTry then
-		if retTry.value.type == nt.STR then
-			returnVal = self:visitFCString(retTry.value)
+		returnVal = retTry
+	end
+	if typeof(returnVal) == 'table' then
+		local t = ''
+		for i, v in pairs(returnVal) do
+			t = t .. v
 		end
+		returnVal = t
 	end
 	
 	
-	
 	self.symbolTable = self:differentiateSymbolTables(lastSymbolTable, self.symbolTable)
-	
 	local retType = nil
 	if typeof(returnVal) == 'boolean' then
 		retType = nt.BOOL
@@ -513,7 +518,7 @@ function interpreter:callFunction(node)
 	if retType then
 		return node.new(retType, nil, returnVal)
 	else
-		return node.new(nt.NUM, nil, 0)
+		return node.new(nt.NUM, nil, base_ret_value)
 	end
 end
 
@@ -529,17 +534,22 @@ function interpreter:forLoop(node)
 	end
 	local block_to_visit = node.right
 	
+	local currentIndex = #self.fCurrentStack.LOOP + 1
+	self.fCurrentStack.LOOP[currentIndex] = currentIndex
+	
 	while true do
 		--Running the Loop
 		lst = deepcopy(self.symbolTable)
-		local ret = self:visitBlock(block_to_visit)
+		self:visitBlock(block_to_visit)
+		if self.fCurrentStack.LOOP[currentIndex] == nil then FF_EXIT_LOOP = false; break end
 		self.symbolTable = self:differentiateSymbolTables(lst, self.symbolTable)
-		if ret then break end
 		
 		--For Loop Checks
 		__statementcall()
 		if not __checkcondition() then break end
 	end
+	
+	self.fCurrentStack.LOOP[currentIndex] = nil
 	
 	self.symbolTable = self:differentiateSymbolTables(lastSymbolTableFull, self.symbolTable)
 end
@@ -551,18 +561,24 @@ function interpreter:whileLoop(node)
 		return self:visitConditionNode(node.op)
 	end
 	local __visitBlock = function()
-		return self:visitBlock(node.value)
+		self:visitBlock(node.value)
 	end
+	
+	local currentIndex = #self.fCurrentStack.LOOP + 1
+	self.fCurrentStack.LOOP[currentIndex] = currentIndex
 	
 	while true do
 		--Running the Loop
 		lst = deepcopy(self.symbolTable)
-		if __visitBlock() then break end
+		__visitBlock()
+		if self.fCurrentStack.LOOP[currentIndex] == nil then FF_EXIT_LOOP = false; break end
 		self.symbolTable = self:differentiateSymbolTables(lst, self.symbolTable)
 		
 		--While Loop Checks
 		if not __checkcondition() then break end
 	end
+	
+	self.fCurrentStack.LOOP[currentIndex] = nil
 	
 	self.symbolTable = self:differentiateSymbolTables(lstFull, self.symbolTable)
 end
@@ -576,7 +592,7 @@ function interpreter:visitStatement(node)
 		return self:visitVariableOverrideNode(node)
 	elseif node.type == nt.IFN then
 		--If statements
-		self:ifStatement(node)
+		return self:ifStatement(node)
 	elseif node.type == nt.FORL then
 		--For Loops
 		self:forLoop(node)
@@ -589,13 +605,29 @@ function interpreter:visitStatement(node)
 	elseif node.type == nt.CFUNC then
 		--Function Calls
 		return self:callFunction(node)
+	elseif node.type == nt.RETF then
+		--Return Statements
+		if self.fCurrentStack.FUNC == {} then error('No Function') end
+		self.symbolTable[self.fCurrentStack.FUNC[#self.fCurrentStack.FUNC]]["RET"] = self:visitExpression(node.value)
+	elseif node.type == nt.BREAK then
+		--Break Statements
+		if self.fCurrentStack.LOOP == {} then error('No Loop') end
+		FF_EXIT_LOOP = true
 	end
 end
 
 function interpreter:visitBlock(block)
 	for i, node in pairs(block) do
-		if node.type == nt.BREAK then return true end
-		self:visitStatement(node)
+		--If Should Skip
+		if self.fCurrentStack then
+			if #self.fCurrentStack.FUNC > 0 and self.symbolTable[self.fCurrentStack.FUNC[#self.fCurrentStack.FUNC]].RET then
+				return end
+			if #self.fCurrentStack.LOOP > 0 and FF_EXIT_LOOP then
+				self.fCurrentStack.LOOP[#self.fCurrentStack.LOOP] = nil
+				return
+			end
+		end
+		local v = self:visitStatement(node)
 	end
 end
 
