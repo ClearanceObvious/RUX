@@ -35,10 +35,11 @@ tokens.LCB = 'LEFT_CURLYBRACKETS'
 tokens.RCB = 'RIGHT_CURLYBRACKETS'
 
 tokens.AID = 'ACCESSID'
-
-tokens.KW = 'KEYWORD'
 tokens.ID = 'IDENTIFIER'
 
+tokens.KW = 'KEYWORD'
+
+tokens.COMMENT = 'COMMENT'
 tokens.EOL = 'ENDOFLINE'	--";"
 
 return tokens
