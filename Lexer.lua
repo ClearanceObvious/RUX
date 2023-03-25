@@ -104,6 +104,14 @@ function lexer:lex()
 			end
 			tokens[#tokens+1] = {type = tt.GT, value = nil}
 			self:advance()
+		elseif self.currentChar == '/' then
+			if self.text:sub(self.currentNum+1, self.currentNum+1) == '/' then
+				self:advance(); self:advance()
+				tokens[#tokens+1] = {type = tt.COMMENT, value = self:getComment()}
+				continue
+			end
+			tokens[#tokens+1] = {type = tt.DIV, value = nil}
+			self:advance()
 		elseif self.currentChar == '+' then
 			tokens[#tokens+1] = {type = tt.PLUS, value = nil}
 			self:advance()
@@ -119,8 +127,6 @@ function lexer:lex()
 		elseif self.currentChar == '*' then
 			tokens[#tokens+1] = {type = tt.MUL, value = nil}
 			self:advance()
-		elseif self.currentChar == '/' then
-			tokens[#tokens+1] = {type = tt.DIV, value = nil}
 			self:advance()
 		elseif self.currentChar == ':' then
 			tokens[#tokens+1] = {type = tt.COLON, value = nil}
@@ -192,6 +198,17 @@ function lexer:getID()
 	else
 		return {type = tt.ID, value = id}
 	end
+end
+
+function lexer:getComment()
+	local str = ''
+
+	while charIn(self.currentChar, strtable) do
+		str = str .. self.currentChar
+		self:advance()
+	end
+	
+	return str
 end
 
 function lexer:getNumber()
