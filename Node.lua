@@ -22,7 +22,7 @@ node.NodeType = {
 	
 	FUNC = 'FunctionNode',			--type FUNC, op args, value id, left block, right RETF?
 	CFUNC = 'CallFunctionNode',		--type CFUNC, op args, value id
-	RETF = 'ReturnFunctionNode',	--type RETF, value expr
+	RETF = 'ReturnFunctionNode',	--type RETF, value expr?
 	
 	FORL = 'ForLoopNode',			--type FORL, op VCN, value COND, left VON, right block
 	WHLN = 'WhileLoopNode',			--type WHLN, op COND, value block
@@ -33,7 +33,7 @@ node.NodeType = {
 	VON = 'VariableOverrideNode'	--type VON, op ID, value expr
 }
 
-function node.new(type, op: any?, value: any?, left: any?, right: any?)
+function node.new(type, op: any?, value: any?, left: any?, right: any?, optional: any?)
 	local self = setmetatable({}, mt)
 	self.type = type
 	self.value = value
