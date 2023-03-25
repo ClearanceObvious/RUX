@@ -22,3 +22,13 @@
  - Added For Loops
  - Added While Loops
  - Added Break Statements
+
+# VERSION 1.7
+ - Fixed Unary Operators to work along with function calls
+ - Fixed Return Statements
+ - Fixed Calling Functions inside of functions
+ - Fixed Break Statements
+ - Fixed if statement boolean conditions
+ - 
+ - Added Comments
+ - Added Console
