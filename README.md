@@ -98,13 +98,12 @@ while ($x != 100) {
 > ### Condition Rule
 
 ```js
-//Valid
+  //Valid
 if (true) {}
 
-  //Unvalid, a new pair of "(" expects a brand new conditional expression to be used, in hopes to change branch operators
+  //Invalid, a new pair of "(" expects a brand new conditional expression to be used, in hopes to change branch operators
 if ((true)) {}
-  //This is the kind of expression it expects
-if ((true && false) || true) {}
-```
 
+  //This is the kind of expression it expects if we use a new pair of parentheses
+if ((true && false) || true) {}
 ```
