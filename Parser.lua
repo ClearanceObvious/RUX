@@ -233,8 +233,8 @@ function parser:ffunction(id)
 	self:advance()
 	if self.currentToken.type ~= tt.LCB then error('Expected Left Curly Brackets "{"') end
 	self:advance()
-	local block, returnval = self:block(true, true)
-	return node.new(nt.FUNC, arguments, id, block, returnval)
+	local block = self:block(true)
+	return node.new(nt.FUNC, arguments, id, block)
 end
 
 function parser:ffunction_call(id)
@@ -264,13 +264,25 @@ function parser:assign_variable(id)
 end
 
 function parser:condition_expression(did_lp :boolean?)
+	local right
 	if self.currentToken.type == tt.LP and not did_lp then
 		return self:if_condition(true)
 	end
 	local left = self:expression()
 	local condition = self.currentToken.type
+	if not match(condition, {tt.EEQ, tt.NEEQ, tt.LT, tt.LTE, tt.GT, tt.GTE}) then
+		if left.type == nt.BOOL then
+			if left.value == true then
+				return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
+			else
+				return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 2))
+			end
+		else
+			return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
+		end
+	end
 	self:advance()
-	local right =  self:expression()
+	right = if right == nil then self:expression() else right
 	local nod
 	if condition == tt.EEQ then
 		nod = node.new(nt.EEQ, nil, nil, left, right)
@@ -350,9 +362,22 @@ function parser:while_loop()
 	return node.new(nt.WHLN, cond, block)
 end
 
+function parser:return_statement()
+	if self.currentToken.type == tt.EOL then
+		self:advance()
+		return node.new(nt.RETF, nil, node.new(nt.NUM, nil, 0))
+	else
+		local expr = self:expression()
+		self:advance()
+		return node.new(nt.RETF, nil, expr)
+	end
+end
+
 function parser:statement()
 	if self.currentToken then
-		if self.currentToken.type == tt.KW then
+		if self.currentToken.type == tt.COMMENT then
+			self:advance()
+		elseif self.currentToken.type == tt.KW then
 			local kw = self.currentToken.value
 			self:advance()
 			
@@ -378,6 +403,9 @@ function parser:statement()
 			elseif kw == keywords._whl and self.currentToken.type == tt.LP then
 				--While Loop
 				return self:while_loop()
+			elseif kw == keywords._return then
+				--Return Statement
+				return self:return_statement()
 			elseif kw == keywords._break and self.currentToken.type == tt.EOL then
 				self:advance()
 				return node.new(nt.BREAK)
@@ -410,6 +438,7 @@ function parser:statement()
 			end
 			return node.new(nt.VAN, nil, val)
 		else
+			print(self.currentToken)
 			error('Expected Keyword')
 		end
 	else
@@ -417,22 +446,12 @@ function parser:statement()
 	end
 end
 
-function parser:block(expect_right_curly_brackets, check_for_return_statement: boolean?)
+function parser:block(expect_right_curly_brackets)
 	local statements = {}
-	local ret = nil
+	local ret
 	if expect_right_curly_brackets then
 		while self.currentToken ~= nil and self.currentToken.type ~= tt.RCB do
-			if check_for_return_statement and self.currentToken.type == tt.KW and self.currentToken.value == keywords._return then break end
 			statements[#statements+1] = self:statement()
-		end
-		if check_for_return_statement then
-			if self.currentToken.type == tt.KW and self.currentToken.value == keywords._return then
-				self:advance()
-				local expr = self:expression()
-				if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
-				self:advance()
-				ret = node.new(nt.RETF, nil, expr)
-			end
 		end
 		if self.currentToken.type == tt.RCB then
 			self:advance()
@@ -445,7 +464,7 @@ function parser:block(expect_right_curly_brackets, check_for_return_statement: b
 		end
 	end
 	
-	return statements, ret
+	return statements
 end
 
 function parser:parse()
