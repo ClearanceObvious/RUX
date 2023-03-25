@@ -7,6 +7,7 @@
 
 # VERSION 1.2
  - Fixed Unary Operators to work along with variable references
+ -
  - Added Functions
  - Added Variable Overriddal
  - Added Boolean Values
@@ -15,8 +16,9 @@
 
 # VERSION 1.5 [**PUBLIC ALPHA**]
  - Fixed Argument Specification Limitation
- - Added For Loops
- - Added While Loops
  - Fixed Function Scope Limitation
  - Fixed Loop Scope Limitation
- - Break Statements
+ - 
+ - Added For Loops
+ - Added While Loops
+ - Added Break Statements
