@@ -92,18 +92,70 @@ while ($x != 100) {
 
 ```
 
+> ### Arrays
+
+```js
+
+let array = ["A", "B", "C", [5, 6, 7]];
+$log($array[1]);    //A
+
+$log($array[3][2]); //6
+
+$array[3] = [1, 2, 3];
+$array[2] = $array[2] + "ACK";  //BACK
+
+```
+
+> ### Compound Operators
+
+```js
+
+let num = 10;
+
+$num += 1; $log($num);    //11
+
+```
+
+# Globals
+
+> ### LOG
+
+```js
+//Outputs the message given into the output
+
+$log("Hello");
+```
+
+> ### SLEEP
+
+```js
+//Pauses Execution for the amount of time given within parentheses
+
+sleep(0.5);
+$log("After 0.5 Seconds!");
+```
+
+> ### RANDOM
+
+```js
+//Gives the variable given as first argument a random value between two limits
+
+let rand = 0;
+$random($rand, 1, 100);
+$log($rand);
+```
 
 # Language Limitations
 
-> ### Condition Rule
-
+> ### Nested Array Limitation
 ```js
-  //Valid
-if (true) {}
 
-  //Invalid, a new pair of "(" expects a brand new conditional expression to be used, in hopes to change branch operators
-if ((true)) {}
+let n = [1, [ 2 ]];
 
-  //This is the kind of expression it expects if we use a new pair of parentheses
-if ((true && false) || true) {}
+//Not Possible
+$n[2][1] = 3;
+
+//Fix for now:
+$n[2] = [3];
+
 ```
