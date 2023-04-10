@@ -26,6 +26,20 @@ function match(t1, t2)
 	return false
 end
 
+function getType(val)
+	local check1 = tonumber(val)
+	if check1 ~= nil then return nt.NUM end
+	
+	if typeof(val) == 'table' then
+		local t = ''
+		for i, v in pairs(val) do
+			if typeof(v) == 'table' then break end
+			return nt.STR
+		end
+		return nt.OBJ
+	end
+end
+
 function deepcopy(orig)
 	local orig_type = type(orig)
 	local copy
@@ -64,26 +78,91 @@ function inSymbolTable(var, st)
 	return false
 end
 
+
 function interpreter.new(nodes)
 	local self = setmetatable({}, mt)
 	self.nodes = nodes
-	self.symbolTable = {
-		log = {
-			ARGS = {"message"},
-			FUNCTION = function(message)
-				local mes = if typeof(message) == 'table' then self:visitExpression(message) else self:visitVariableAccessNode(message).value
-				if typeof(mes) == 'table' then
-					local t = ''
-					for i, v in pairs(mes) do
-						t = t .. v
-					end
-					mes = t
+	self.symbolTable = {}
+	
+	--LOG
+	self.symbolTable['log'] = {
+		ARGS = {"message"},
+		FUNCTION = function(message)
+			-----
+			local f
+			if message.type then
+				if message.type == nt.CFUNC then
+					f = self.symbolTable['message']
+				else
+					f = self:visitExpression(message)
 				end
-				mes = if mes == base_ret_value then 'null' else mes
-				console:pushToConsole(mes)
-			end,
-		}
+			else
+				f = if typeof(message) == 'table' then self:visitExpression(message) else self:visitVariableAccessNode(message).value
+			end
+			f = if f == base_ret_value then 'null' else f
+			----
+			
+			console:pushToConsole(f)
+		end,
 	}
+	
+	--SLEEP
+	self.symbolTable['sleep'] = {
+		ARGS = {"timeToSleep"},
+		FUNCTION = function(timeToSleep)
+			-----
+			local f
+			if timeToSleep.type then
+				if timeToSleep.type == nt.CFUNC then
+					f = self.symbolTable['timeToSleep']
+				else
+					f = self:visitExpression(timeToSleep)
+				end
+			else
+				f = if typeof(timeToSleep) == 'table' then self:visitExpression(timeToSleep) else self:visitVariableAccessNode(timeToSleep).value
+			end
+			f = if f == base_ret_value then 'null' else f
+			----
+			
+			task.wait(f)
+		end,
+	}
+	
+	--RANDOM
+	self.symbolTable['random'] = {
+		ARGS = {'reference', 'num1', 'num2'},
+		FUNCTION = function(reference, num1, num2)
+			-----
+			local n1
+			if num1.type then
+				if num1.type == nt.CFUNC then
+					n1 = self.symbolTable['num1']
+				else
+					n1 = self:visitExpression(num1)
+				end
+			else
+				n1 = if typeof(num1) == 'table' then self:visitExpression(num1) else self:visitVariableAccessNode(num1).value
+			end
+			n1 = if n1 == base_ret_value then 'null' else n1
+			----
+			-----
+			local n2
+			if num2.type then
+				if num2.type == nt.CFUNC then
+					n2 = self.symbolTable['num2']
+				else
+					n2 = self:visitExpression(num2)
+				end
+			else
+				n2 = if typeof(num2) == 'table' then self:visitExpression(num2) else self:visitVariableAccessNode(num2).value
+			end
+			n2 = if n2 == base_ret_value then 'null' else n2
+			----
+			
+			self:visitVariableOverrideNode(node.new(nt.VON, reference.value, node.new(nt.NUM, nil, math.random(n1, n2))))
+		end,
+	}
+	
 	self.fCurrentStack = {
 		FUNC = {},
 		LOOP = {}
@@ -131,14 +210,14 @@ function interpreter:visitVariableAccessNode(nod)
 		end
 		nod.value = str
 	end
-	
 	if not inSymbolTable(nod.value, self.symbolTable) then
-		print(self.symbolTable)
+		print('SYMBOL', self.symbolTable)
 		error('Variable "' .. nod.value .. '" does not exist')
 	end
 
 	
 	local check = tonumber(self.symbolTable[nod.value])
+	local check2 = false
 	
 	if check then
 		return node.new(nt.NUM, nil, self.symbolTable[nod.value])
@@ -146,7 +225,33 @@ function interpreter:visitVariableAccessNode(nod)
 		if typeof(self.symbolTable[nod.value]) == 'table' then
 			local str = ''
 			for i, v in pairs(self.symbolTable[nod.value]) do
+				if typeof(v) == 'table' then
+					check2 = true
+					break
+				end
 				str = str .. v
+			end
+			if check2 then
+				local obj = self.symbolTable[nod.value]
+				
+				if nod.op.op ~= nil then
+					local index = nod.op.op
+					local index_as_val = self:visitExpression(index)
+					local getval = self:visitExpression(obj[index_as_val])
+					if typeof(getval) == 'table' then
+						getval = self:visitExpression(getval)
+					end
+					return node.new(getType(getval), nil, getval)
+				else
+					local path = {}
+					local curobj = obj
+					for i, v in pairs(nod.op) do
+						path[#path + 1] = self:visitExpression(v.op)
+						curobj = curobj[path[#path]].value
+					end
+					
+					return node.new(getType(curobj), nil, curobj)
+				end
 			end
 			return node.new(nt.STR, nil, str)
 		end
@@ -159,13 +264,56 @@ function interpreter:visitVariableOverrideNode(node)
 end
 
 function interpreter:visitVariableCreateNode(node, override: boolean?)
+	if node.optional then
+		node.optional = self:visitExpression(node.optional)
+		if node.optional.type == nt.OBJACC then
+			node.optional = self:visitExpression(node.optional.op)
+		end
+	end
 	if not inSymbolTable(node.op, self.symbolTable) then
 		local val = self:visitExpression(node.value)
-		self.symbolTable[tostring(node.op)] = val
+		if not node.optional then
+			self.symbolTable[tostring(node.op)] = val
+		else
+			self.symbolTable[tostring(node.op)][node.optional] = val
+		end
 	else
 		if override then
 			local val = self:visitExpression(node.value)
-			self.symbolTable[tostring(node.op)] = val
+			local comp = node.left
+			if comp then
+				if comp == tt.CPLUS then
+					if not node.optional then
+						self.symbolTable[tostring(node.op)] += val
+					else
+						self.symbolTable[tostring(node.op)][node.optional] -= val
+					end
+				elseif comp == tt.CMIN then
+					if not node.optional then
+						self.symbolTable[tostring(node.op)] -= val
+					else
+						self.symbolTable[tostring(node.op)][node.optional] -= val
+					end
+				elseif comp == tt.CMUL then
+					if not node.optional then
+						self.symbolTable[tostring(node.op)] *= val
+					else
+						self.symbolTable[tostring(node.op)][node.optional] *= val
+					end
+				elseif comp == tt.CDIV then
+					if not node.optional then
+						self.symbolTable[tostring(node.op)] /= val
+					else
+						self.symbolTable[tostring(node.op)][node.optional] /= val
+					end
+				end
+			else
+				if not node.optional then
+					self.symbolTable[tostring(node.op)] = val
+				else
+					self.symbolTable[tostring(node.op)][node.optional] = val
+				end
+			end
 		else
 			error('Variable ' .. node.op .. ' already exists')
 		end
@@ -277,6 +425,8 @@ function interpreter:visitExpression(node)
 	end
 	if node.type == nt.NUM or node.type == nt.STR or node.type == nt.BOOL then
 		return node.value
+	elseif node.type == nt.OBJ then
+		return table.clone(node.value)
 	elseif node.type == nt.UNOP then
 		return self:visitUnaryOp(node.type, node.value, node.op).value
 	elseif node.type == nt.BINOP then
@@ -287,8 +437,10 @@ function interpreter:visitExpression(node)
 		return self:visitExpression(self:callFunction(node))
 	elseif node.type == nt.RETF then
 		return self:visitExpression(node.value)
+	elseif node.type == nt.COND then
+		return self:visitConditionNode(node)
 	else
-		error('Unknown Error in Expression')
+		return node
 	end
 end
 
@@ -311,23 +463,27 @@ function interpreter:visitConditionalOperatorNode(cond)
 	else
 		error('Unknown Type in If Statement ' .. cond.left.type)
 	end
-
-	if cond.right.type == nt.NUM or cond.right.type == nt.STR or cond.right.type == nt.BOOL then
-		right = cond.right.value
-	elseif cond.right.type == nt.VAN then
-		right = self:visitVariableAccessNode(cond.right).value
-	elseif cond.right.type == nt.UNOP then
-		right = self:visitUnaryOp(cond.right.value.type, cond.right.value, cond.right.op).value
-	elseif cond.right.type == nt.BINOP then
-		right = self:visitBinOp(cond.right.left, cond.right.op, cond.right.right).value
-	elseif cond.right.type == nt.COND then
-		right = self:visitConditionNode(cond.right)
-	elseif cond.right.type == nt.CFUNC then
-		right = self:visitExpression(self:callFunction(cond.right))
-	elseif match(cond.right.type, {nt.EEQ, nt.NEEQ, nt.LT, nt.LTE, nt.GT, nt.GTE}) then
-		right = self:visitConditionalOperatorNode(cond.right)
+	
+	if cond.right then
+		if cond.right.type == nt.NUM or cond.right.type == nt.STR or cond.right.type == nt.BOOL then
+			right = cond.right.value
+		elseif cond.right.type == nt.VAN then
+			right = self:visitVariableAccessNode(cond.right).value
+		elseif cond.right.type == nt.UNOP then
+			right = self:visitUnaryOp(cond.right.value.type, cond.right.value, cond.right.op).value
+		elseif cond.right.type == nt.BINOP then
+			right = self:visitBinOp(cond.right.left, cond.right.op, cond.right.right).value
+		elseif cond.right.type == nt.COND then
+			right = self:visitConditionNode(cond.right)
+		elseif cond.right.type == nt.CFUNC then
+			right = self:visitExpression(self:callFunction(cond.right))
+		elseif match(cond.right.type, {nt.EEQ, nt.NEEQ, nt.LT, nt.LTE, nt.GT, nt.GTE}) then
+			right = self:visitConditionalOperatorNode(cond.right)
+		else
+			error('Unknown Type in If Statement' .. cond.right.type)
+		end
 	else
-		error('Unknown Type in If Statement' .. cond.right.type)
+		right = true
 	end
 
 	--If any of them are pure strings, we outstring the strings
@@ -454,7 +610,7 @@ function interpreter:defineFunction(node)
 			if #node.op ~= (#{...}) then
 				error('Invalid number of arguments')
 			end
-			local block =  self:visitBlock(node.left, node.value)
+			local block =  self:visitBlock(node.left)
 			self.fCurrentStack.FUNC[index] = nil
 		end,
 		ARGS = node.op
@@ -477,7 +633,6 @@ end
 
 function interpreter:callFunction(node)
 	local lastSymbolTable
-	
 	if not inSymbolTable(node.value, self.symbolTable) then
 		error('"'..node.value..'" doesnt exist.')
 	end
@@ -486,7 +641,6 @@ function interpreter:callFunction(node)
 	if #args ~= #node.op then
 		error('Function ' .. node.value .. ': Invalid Number of Arguments ' .. tostring(#args) .. ' : ' .. tostring(#node.op))
 	end
-		
 	lastSymbolTable = deepcopy(self.symbolTable)
 	self:updateSymbolTable(args, node.op)
 	
@@ -503,9 +657,8 @@ function interpreter:callFunction(node)
 		end
 		returnVal = t
 	end
-	
-	
-	self.symbolTable = self:differentiateSymbolTables(lastSymbolTable, self.symbolTable)
+	local st = self.symbolTable
+	self.symbolTable = self:differentiateSymbolTables(lastSymbolTable, st)
 	local retType = nil
 	if typeof(returnVal) == 'boolean' then
 		retType = nt.BOOL
@@ -620,7 +773,7 @@ function interpreter:visitBlock(block)
 	for i, node in pairs(block) do
 		--If Should Skip
 		if self.fCurrentStack then
-			if #self.fCurrentStack.FUNC > 0 and self.symbolTable[self.fCurrentStack.FUNC[#self.fCurrentStack.FUNC]].RET then
+			if #self.fCurrentStack.FUNC > 0 and self.symbolTable[self.fCurrentStack.FUNC[#self.fCurrentStack.FUNC]].RET and #self.fCurrentStack.LOOP == 0 then
 				return end
 			if #self.fCurrentStack.LOOP > 0 and FF_EXIT_LOOP then
 				self.fCurrentStack.LOOP[#self.fCurrentStack.LOOP] = nil
@@ -634,5 +787,4 @@ end
 function interpreter:interpret()
 	self:visitBlock(self.nodes)
 end
-
 return interpreter
