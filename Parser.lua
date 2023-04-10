@@ -7,6 +7,7 @@ local node = require(script.Parent.Node)
 local nt = node.NodeType
 
 local keywords = require(script.Parent.Lexer).keywords
+local literals = {tt.NUM, tt.BOOL, tt.LP, tt.LQP, tt.LSTR}
 
 function dump(o)
 	if type(o) == 'table' then
@@ -57,6 +58,15 @@ function parser:advance()
 	self.currentToken = self.tokens[self.currentNum] or nil
 end
 
+function parser:index()
+	local op
+	if self.currentToken.type ~= tt.LQP then error("Expected '['") end
+	self:advance()
+	op = node.new(nt.OBJACC, self:expression())
+	if self.currentToken.type ~= tt.RQP then error("Expected ']'") end
+	
+	return op
+end
 
 function parser:factor()
 	local ret = nil
@@ -64,15 +74,27 @@ function parser:factor()
 		if self.currentToken.type == tt.AID then
 			self:advance()
 			local val = self.currentToken.value
+			local op = nil
 			if self.tokens[self.currentNum+1] then
 				if self.tokens[self.currentNum+1].type == tt.LP then
 					self:advance(); self:advance()
 
 					ret = self:ffunction_call(val)
+				elseif self.tokens[self.currentNum+1].type == tt.LQP then
+					self:advance()
+					op = {self:index()}
+					local nextToken = self.tokens[self.currentNum + 1]
+					while nextToken.type == tt.LQP do
+						self:advance()
+						op[#op + 1] = self:index()
+						nextToken = self.tokens[self.currentNum + 1]
+					end
+					
+					if #op == 1 then op = op[1] end
 				end
 			end
 			if ret == nil then
-				ret = node.new(nt.VAN, nil, val)
+				ret = node.new(nt.VAN, op, val)
 				self:advance()
 			end
 		elseif self.currentToken.type == tt.BOOL then
@@ -93,6 +115,25 @@ function parser:factor()
 
 			self:advance()
 			ret = node.new(nt.NUM, nil, val)
+		elseif self.currentToken.type == tt.LQP then
+			local nextToken = self.tokens[self.currentNum+1]
+			if match(nextToken.type, literals) then
+				self:advance()
+				local items = {self:expression()}
+				while self.currentToken.type == tt.COMMA do
+					self:advance()
+					items[#items + 1] = self:expression()
+				end
+				
+				ret = node.new(nt.OBJ, nil, items)
+				if self.currentToken.type ~= tt.RQP then error('Expected "]"') end
+				self:advance()
+			elseif nextToken.type == tt.RQP then
+				self:advance(); self:advance()
+				ret = node.new(nt.OBJ, nil, {})
+			else
+				error('Expected literal or "]", got ' .. nextToken.type)
+			end
 		else
 			error('Number expected, got ' .. if self.currentToken then self.currentToken.type:lower() else 'nothing')
 		end
@@ -129,7 +170,7 @@ function parser:get_string(optional_van: any?)
 	return node.new(nt.STR, nil, strVal)
 end
 
-function parser:expression(expect_brackets)
+function parser:expression(expect_brackets: any?)
 	local left = self:term(true)
 	
 	while self.currentToken ~= nil and self.currentNum <= #self.tokens and match(self.currentToken.type, {tt.PLUS, tt.MINUS}) do
@@ -138,10 +179,17 @@ function parser:expression(expect_brackets)
 
 		left = node.new(nt.BINOP, op, nil, left, self:term(false))
 	end
+	while self.currentToken ~= nil and self.currentNum <= #self.tokens and match(self.currentToken.type, {
+		tt.EEQ, tt.NEEQ, tt.LT, tt.LTE, tt.GT, tt.GTE, tt.OR, tt.AND })
+	do
+		left = self:if_condition(nil, true, left)
+	end
+	
 	if expect_brackets then
 		if self.currentToken then
 			if self.currentToken.type ~= tt.RP then
-				error('Unknown Syntax Error Occured')
+				print(self.currentToken)
+				error('Unknown Syntax Error Occured, expect ")"')
 			end
 		end
 	end
@@ -150,11 +198,9 @@ function parser:expression(expect_brackets)
 end
 
 function parser:if_statement()
-	local left = self:if_condition()
+	local left = self:expression()
 	local elifs = nil
 	
-	if self.currentToken.type ~= tt.RP then error('Expected Right Parentheses') end
-	self:advance()
 	if self.currentToken.type ~= tt.LCB then error('Expected "{"') end
 	self:advance()
 	
@@ -177,6 +223,21 @@ function parser:if_statement()
 			else
 				error('Invalid Syntax After Else Occured')
 			end
+		end
+	end
+	if left.type ~= nt.COND then
+		if left.type == nt.BOOL then
+			if left.value == true then
+				left = node.new(nt.COND, nil, nil,
+					node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
+				)
+			else
+				left = node.new(nt.COND, nil, nil,
+					node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 2)))
+			end
+		else
+			left = node.new(nt.COND, nil, nil,
+				node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1)))
 		end
 	end
 	
@@ -239,50 +300,44 @@ end
 
 function parser:ffunction_call(id)
 	local args = self:fargs(true)
-	if self.currentToken.type ~= tt.RP then error('Expected Right parentheses') end
+	if self.currentToken.type ~= tt.RP then error('Expected Right parentheses, got ' .. self.currentToken.type) end
 	self:advance()
 	return node.new(nt.CFUNC, args, id)
 end
 
+--let id = [expr*];
 function parser:assign_variable(id)
-	if self.currentToken.type == tt.EQ then
-		self:advance()
-		local expr = self:expression()
-		if self.currentToken then
-			if self.currentToken.type ~= tt.EOL then
-				print(self.currentToken)
-				error('Unfinished Statement')
-			end
-		else
+	self:advance()
+	local expr = self:expression()
+	if self.currentToken then
+		if self.currentToken.type ~= tt.EOL then
+			print(self.currentToken)
 			error('Unfinished Statement')
 		end
-		self:advance()
-		return node.new(nt.VCN, id, expr)
 	else
-		error('Expected Equals "="')
-	end
-end
-
-function parser:condition_expression(did_lp :boolean?)
-	local right
-	if self.currentToken.type == tt.LP and not did_lp then
-		return self:if_condition(true)
-	end
-	local left = self:expression()
-	local condition = self.currentToken.type
-	if not match(condition, {tt.EEQ, tt.NEEQ, tt.LT, tt.LTE, tt.GT, tt.GTE}) then
-		if left.type == nt.BOOL then
-			if left.value == true then
-				return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
-			else
-				return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 2))
-			end
-		else
-			return node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
-		end
+		error('Unfinished Statement')
 	end
 	self:advance()
-	right = if right == nil then self:expression() else right
+	return node.new(nt.VCN, id, expr)
+end
+
+function parser:condition_expression(did_lp :boolean?, starter: any?)
+	local left, condition, right
+	condition = self.currentToken.type
+	if starter ~= nil then
+		self:advance()
+		local expr = self:expression()
+		left = starter
+		right = expr
+	else
+		left = self:expression()
+		condition = self.currentToken.type; self:advance()
+		self:advance()
+		if match(condition, {tt.EEQ, tt.NEEQ, tt.LTE, tt.LT, tt.GT, tt.GTE}) then
+			right = self:expression()
+		end
+	end
+	
 	local nod
 	if condition == tt.EEQ then
 		nod = node.new(nt.EEQ, nil, nil, left, right)
@@ -303,14 +358,15 @@ function parser:condition_expression(did_lp :boolean?)
 	return nod
 end
 
-function parser:if_condition(did_lp: boolean?, should_keep_first: boolean?)
+function parser:if_condition(did_lp: boolean?, should_keep_first: boolean?, starter: any?)
 	if not should_keep_first then self:advance() end
-	local cond = self:condition_expression(did_lp)
+	local cond = self:condition_expression(did_lp, starter)
 	local left = node.new(nt.COND, nil, nil, cond)
 
 	while self.currentToken.type == tt.AND or self.currentToken.type == tt.OR  do
 		local tok = self.currentToken
 		self:advance()
+		print('.')
 		left = node.new(nt.COND, tok, nil, left, self:condition_expression())
 	end
 
@@ -326,9 +382,9 @@ function parser:for_loop()
 		if self.currentToken.type ~= tt.ID then error('Expected Identifier') end
 		local id = self.currentToken.value
 		self:advance()
-		
 		local vcn = self:assign_variable(id)
-		local cond = self:if_condition(false, true)
+		local comp
+		local cond = self:expression()
 		if self.currentToken.type ~= tt.EOL then error('Expected ";"') end
 		self:advance()
 		if self.currentToken.type ~= tt.AID then error('Expected "$"') end
@@ -336,12 +392,13 @@ function parser:for_loop()
 		if self.currentToken.type ~= tt.ID then error('Expected Identifier') end
 		local id = self.currentToken.value
 		self:advance()
-		if self.currentToken.type ~= tt.EQ then error('Expected Equals Sign "="') end
+		if not match(self.currentToken.type, {tt.EQ, tt.CPLUS, tt.CMIN, tt.CDIV, tt.CMUL}) then error('Expected Equals Sign "=" or compound operator') end
+		if match(self.currentToken.type, {tt.CPLUS, tt.CMIN, tt.CDIV, tt.CMUL}) then comp = self.currentToken.type end
 		self:advance()
 		local expr = self:expression()
 		if self.currentToken.type ~= tt.RP then error('Expected ")"') end
 		self:advance()
-		local von = node.new(nt.VON, id, expr)
+		local von = node.new(nt.VON, id, expr, comp)
 		if self.currentToken.type ~= tt.LCB then error('Expected Block Start "{"') end
 		self:advance()
 		local block = self:block(true)
@@ -353,12 +410,27 @@ end
 
 function parser:while_loop()
 	self:advance()		--Advancing past first "("
-	local cond = self:if_condition(false, true)
+	local cond = self:expression()
 	if self.currentToken.type ~= tt.RP then error('Expected ")"') end
 	self:advance()
 	if self.currentToken.type ~= tt.LCB then error('Expected Block Start "{"') end
 	self:advance()
 	local block = self:block(true)
+	if cond.type ~= nt.COND then
+		if cond.type == nt.BOOL then
+			if cond.value == true then
+				cond = node.new(nt.COND, nil, nil,
+					node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1))
+				)
+			else
+				cond = node.new(nt.COND, nil, nil,
+					node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 2)))
+			end
+		else
+			cond = node.new(nt.COND, nil, nil,
+				node.new(nt.EEQ, nil, nil, node.new(nt.NUM, nil, 1), node.new(nt.NUM, nil, 1)))
+		end
+	end
 	return node.new(nt.WHLN, cond, block)
 end
 
@@ -424,6 +496,19 @@ function parser:statement()
 					if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
 					self:advance()
 					return node.new(nt.VON, val, expr)
+				elseif match(self.currentToken.type, {tt.CPLUS, tt.CMIN, tt.CDIV, tt.CMUL}) then
+					local compoundoperator = self.currentToken.type
+					self:advance()
+					local expr = self:expression()
+					if self.currentToken then
+						if self.currentToken.type ~= tt.EOL then
+							print(self.currentToken); error('Unfinished Statement')
+						end
+					else
+						error('Unfinished Statement')
+					end
+					self:advance()
+					return node.new(nt.VON, val, expr, compoundoperator)
 				elseif self.currentToken.type == tt.LP then
 					--Function Calls
 					self:advance()
@@ -431,6 +516,30 @@ function parser:statement()
 					if self.currentToken.type ~= tt.EOL then error('Expected End Of Line ";"') end
 					self:advance()
 					return fcall
+				elseif self.currentToken.type == tt.LQP then
+					local comp
+					
+					--Objects
+					self:advance()
+					local op = self:expression()
+					if self.currentToken.type ~= tt.RQP then error('Expected "]"') end
+					self:advance()
+					if not match(self.currentToken.type, {tt.EQ, tt.CPLUS, tt.CMIN, tt.CDIV, tt.CMUL}) then
+						error('Expected "=" or compound operator')
+					else
+						if match(self.currentToken.type, {tt.CPLUS, tt.CMIN, tt.CDIV, tt.CMUL}) then
+							comp = self.currentToken.type
+							self:advance()
+							local n = node.new(nt.VON, val, self:expression(), comp, nil, node.new(nt.OBJACC, op))
+							if self.currentToken.type ~= tt.EOL then error('Expected ";"') end self:advance()
+							return n
+						else
+							self:advance()
+							local n = node.new(nt.VON, val, self:expression(), nil, nil, node.new(nt.OBJACC, op))
+							if self.currentToken.type ~= tt.EOL then error('Expected ";"') end self:advance()
+							return n
+						end
+					end
 				else
 					print(self.currentToken)
 					error('Invalid Syntax Error')
