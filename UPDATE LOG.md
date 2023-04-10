@@ -39,7 +39,7 @@
  - Fixed single conditions like "true" or "false"
  - Fixed Loops
  - Fixed Index Parsing Empty Arrays
-
+ - 
  - Added Nested Conditional Expressions, right takes priority "1 == 3 == 2"
  - Added Compound Operators
  - Added Arrays
