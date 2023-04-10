@@ -33,7 +33,7 @@
  - Added Comments
  - Added Console
 
-# VERSION 2.0
+# VERSION 2.0 [**PUBLIC BETA**]
  - Fixed If Statement Argument Limitations
  - Fixed Expressions by rewriting them
  - Fixed single conditions like "true" or "false"
