@@ -6,6 +6,9 @@ node.NodeType = {
 	STR = 'StringNode',				--type STR, value string
 	BOOL = 'BooleanNode',			--type BOOL, value false/true
 	
+	OBJ = 'ObjectNode'	,			--type OBJ, value expr*
+	OBJACC = 'ObjectAccessNode',	--type OBJACC, op expr
+	
 	BINOP = 'BinaryOperationNode',	--type BINOP, left expr, right expr
 	UNOP = 'UnaryOperationNode',	--type UNOP, op +/-, value expr
 	
@@ -29,8 +32,8 @@ node.NodeType = {
 	BREAK = 'BreakLoopNode',		--type BREAK
 	
 	VCN = 'VariableCreateNode',		--type VCN, op ID, value expr
-	VAN = 'VariableAccessNode',		--type VAN, value ID
-	VON = 'VariableOverrideNode'	--type VON, op ID, value expr
+	VAN = 'VariableAccessNode',		--type VAN, value ID, op OBJACC?
+	VON = 'VariableOverrideNode'	--type VON, op ID, value expr, left compound_operator?
 }
 
 function node.new(type, op: any?, value: any?, left: any?, right: any?, optional: any?)
@@ -40,6 +43,7 @@ function node.new(type, op: any?, value: any?, left: any?, right: any?, optional
 	self.left = left
 	self.right = right
 	self.op = op
+	self.optional = optional
 	
 	return self
 end
