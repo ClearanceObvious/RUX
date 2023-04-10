@@ -32,3 +32,16 @@
  - 
  - Added Comments
  - Added Console
+
+#VERSION 2.0
+ - Fixed If Statement Argument Limitations
+ - Fixed Expressions by rewriting them
+ - Fixed single conditions like "true" or "false"
+ - Fixed Loops
+ - Fixed Index Parsing Empty Arrays
+
+ - Added Nested Conditional Expressions, right takes priority "1 == 3 == 2"
+ - Added Compound Operators
+ - Added Arrays
+ - Added Nested Arrays
+ - Added two new globals, "sleep" and "random"
