@@ -144,18 +144,3 @@ let rand = 0;
 $random($rand, 1, 100);
 $log($rand);
 ```
-
-# Language Limitations
-
-> ### Nested Array Limitation
-```js
-
-let n = [1, [ 2 ]];
-
-//Not Possible
-$n[2][1] = 3;
-
-//Fix for now:
-$n[2] = [3];
-
-```
