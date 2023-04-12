@@ -144,3 +144,7 @@ let rand = 0;
 $random($rand, 1, 100);
 $log($rand);
 ```
+
+# Limitations
+
+> ### Little bugs might occur with arrays for now, fix in later versions
