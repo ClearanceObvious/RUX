@@ -131,7 +131,7 @@ $log("Hello");
 ```js
 //Pauses Execution for the amount of time given within parentheses
 
-sleep(0.5);
+$sleep(0.5);
 $log("After 0.5 Seconds!");
 ```
 
